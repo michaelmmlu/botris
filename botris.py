@@ -10,7 +10,7 @@ colors = [
     (127, 241, 23),
     (164, 81, 242),
     (234, 63, 51),
-    (47, 47, 47)
+    (44, 44, 43)
 ]
 
 tetrominos = np.array([
@@ -236,6 +236,7 @@ class Botris(object):
 			'q':	    self.start_game,
             'SPACE':    self.hard_drop,
             'LSHIFT':   self.hold,
+            'RSHIFT':   self.hold
 		}
 
         self.gameover = False
@@ -248,10 +249,13 @@ class Botris(object):
             pygame.draw.line(self.screen, (255, 255, 255), (self.rlim + 1, 0), (self.rlim + 1, self.height - 1))
             self.display_msg("Next:", (self.rlim + cell_size, 2))
             self.display_msg("Score: %d\n\nLevel: %d\nLines: %d" % (self.score, self.level, self.lines), (self.rlim + cell_size, cell_size * 5))
+            self.display_msg("Hold:", (self.rlim + cell_size, cell_size * 10))
             self.draw_matrix(self.background, (0, 0))
             self.draw_matrix(self.board, (0, 0))
             self.draw_matrix(self.curr_tet, (self.tet_x, self.tet_y))
             self.draw_matrix(self.next_tet, (board_width + 1, 2))
+            if self.hold_tet is not None:
+                self.draw_matrix(self.hold_tet, (board_width + 1, 11))
             self.draw_matrix(self.curr_tet, self.get_ghost_loc())
             pygame.display.update()
 
