@@ -61,7 +61,7 @@ def join_matrices(mat1, mat2, mat2_off):
 board_width = 10
 board_height = 20
 cell_size = 18
-maxfps = 60
+maxfps = 30
 
 class Botris(object):
 
@@ -198,7 +198,7 @@ class Botris(object):
             if self.lock_delay_timer is not None:
                 if (prev_x != self.tet_x or prev_y != self.tet_y):
                     self.lock_delay_timer = None
-                elif pygame.time.get_ticks() - self.lock_delay_timer > 500:
+                elif pygame.time.get_ticks() - self.lock_delay_timer >= 300:
                     self.drop()
 
     def drop(self):
@@ -208,7 +208,7 @@ class Botris(object):
                 if self.lock_delay_timer is None:
                     self.lock_delay_timer = pygame.time.get_ticks()
                     self.tet_y -= 1
-                elif pygame.time.get_ticks() - self.lock_delay_timer >= 500:
+                elif pygame.time.get_ticks() - self.lock_delay_timer >= 300:
                     self.board = join_matrices(self.board, self.curr_tet, (self.tet_x, self.tet_y))
                     self.prev_tet = self.curr_tet
                     self.prev_y = self.tet_y
@@ -239,7 +239,7 @@ class Botris(object):
             while not self.check_collision(self.curr_tet, (self.tet_x, self.tet_y)):
                 self.tet_y += 1
             self.tet_y -= 1
-            self.lock_delay_timer = 500
+            self.lock_delay_timer = 300
             self.hard_dropped = True
             self.drop()
 
@@ -267,7 +267,7 @@ class Botris(object):
         if not self.gameover and not self.paused:
             pos = self.get_rot_position(self.curr_tet)
             new_tet = rotate_clockwise(self.curr_tet)
-            kick_tests_1 = [(0, 0), (-1, 0), (-1, 1), (0, -2, (-1, -2))]
+            kick_tests_1 = [(0, 0), (-1, 0), (-1, 1), (0, -2), (-1, -2)]
             kick_tests_2 = {
                     0: [(0, 0), (-2, 0), (1, 0), (-2, -1), (1, 2)],
                     1: [(0, 0), (-1, 0), (2, 0), (-1, 2), (2, -1)],
@@ -330,7 +330,7 @@ class Botris(object):
             self.screen.fill((0, 0, 0))
             pygame.draw.line(self.screen, (255, 255, 255), (self.rlim + 1, 0), (self.rlim + 1, self.height - 1))
             self.display_msg("Next:", (self.rlim + cell_size, 2))
-            self.display_msg("Hold:", (self.rlim + cell_size, cell_size * 10))
+            self.display_msg("Hold:", (self.rlim + cell_size, cell_size * 7))
             self.display_msg("Score: %d\nLines: %d" % (self.score, self.lines), (self.rlim + cell_size, cell_size * 5))
             self.draw_matrix(self.board, (0, 0))
             ghost_tet = np.copy(self.curr_tet)
@@ -339,7 +339,7 @@ class Botris(object):
             self.draw_matrix(self.curr_tet, (self.tet_x, self.tet_y))
             self.draw_matrix(self.next_tet, (board_width + 1, 2))
             if self.hold_tet is not None:
-                self.draw_matrix(self.hold_tet, (board_width + 1, 11))
+                self.draw_matrix(self.hold_tet, (board_width + 1, 8))
             pygame.display.update()
 
             for event in pygame.event.get():
