@@ -2,7 +2,7 @@ import pygame, sys
 import numpy as np
 
 colors = [
-    (44, 44, 43),
+    (0, 0, 0),
     (114, 242, 240),
     (34, 70, 240),
     (237, 161, 50),
@@ -71,18 +71,12 @@ class Botris(object):
         self.width = cell_size * (board_width + 6)
         self.height = cell_size * board_height
         self.rlim = cell_size * board_width
-        self.background = [[8 if x % 2 == y % 2 else 0 for x in range(board_width)] for y in range(board_height)]
         self.board = [[0 for _ in range(board_width)] for _ in range(board_height)]
         self.default_font = pygame.font.Font(pygame.font.get_default_font(), 12)
         self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.event.set_blocked(pygame.MOUSEMOTION)
 
         self.init_game()
-        self.hold_tet = None
-        self.hold_used = False
-        self.lock_delay_timer = None
-        self.combo = 0
-        self.hard_dropped = False
 
     def init_game(self):
         self.bag = np.copy(tetrominos)
@@ -93,9 +87,13 @@ class Botris(object):
         self.bag = np.delete(self.bag, 0)
         self.next_tet = self.bag[0]
         self.bag = np.delete(self.bag, 0)
-        self.level = 1
         self.score = 0
         self.lines = 0
+        self.hold_tet = None
+        self.hold_used = False
+        self.lock_delay_timer = None
+        self.combo = 0
+        self.hard_dropped = False
         pygame.time.set_timer(pygame.USEREVENT + 1, 1000)
 
     def spawn_random_tet(self):
@@ -131,6 +129,14 @@ class Botris(object):
         temp_y -= 1
         return (self.tet_x, temp_y)
 
+    def get_rot_position(self, tet):
+        pos = 0
+        curr = self.reorient_tet(tet)
+        while not np.array_equal(curr, tet):
+            curr = rotate_clockwise(curr)
+            pos += 1
+        return pos
+
     def get_score(self, lines_cleared):
         self.prev_tet = self.reorient_tet(self.prev_tet)
         # mini t-spin, mini t-spin single, t-spin, t-spin single
@@ -138,12 +144,12 @@ class Botris(object):
         if lines_cleared == 1:
             score = 100
         elif lines_cleared == 2:
-            if self.prev_tet == tetrominos[5]:
+            if np.array_equal(self.prev_tet, tetrominos[5]):
                 score = 1200
             else:
                 score = 300
         elif lines_cleared == 3:
-            if self.prev_tet == tetrominos[5]:
+            if np.array_equal(self.prev_tet, tetrominos[5]):
                 score = 1600
             else:
                 score = 500
@@ -180,13 +186,20 @@ class Botris(object):
                     shape = pygame.Rect((off_x + x) * cell_size, (off_y + y) * cell_size, cell_size, cell_size)
                     pygame.draw.rect(self.screen, colors[cell], shape, 0)
 
-    def move(self, delta_x):
+    def move(self, delta_x, delta_y = 0):
         if not self.gameover and not self.paused:
-            if self.lock_delay_timer is not None:
-                self.lock_delay_timer = None
+            prev_x = self.tet_x
+            prev_y = self.tet_y
             new_x = self.tet_x + delta_x
-            if not self.check_collision(self.curr_tet, (new_x, self.tet_y)):
+            new_y = self.tet_y + delta_y
+            if not self.check_collision(self.curr_tet, (new_x, new_y)):
                 self.tet_x = new_x
+                self.tet_y = new_y
+            if self.lock_delay_timer is not None:
+                if (prev_x != self.tet_x or prev_y != self.tet_y):
+                    self.lock_delay_timer = None
+                elif pygame.time.get_ticks() - self.lock_delay_timer > 500:
+                    self.drop()
 
     def drop(self):
         if not self.gameover and not self.paused:
@@ -216,6 +229,7 @@ class Botris(object):
                     elif self.combo > 0:
                         self.combo = 0
                     self.score += self.get_score(lines_deleted)
+                    self.lines += lines_deleted
                     self.hold_used = False
                     self.lock_delay_timer = None
                     self.hard_dropped = False
@@ -251,11 +265,34 @@ class Botris(object):
 
     def rotate_tet(self):
         if not self.gameover and not self.paused:
-            if self.lock_delay_timer is not None:
-                self.lock_delay_timer = None
+            pos = self.get_rot_position(self.curr_tet)
             new_tet = rotate_clockwise(self.curr_tet)
-            if not self.check_collision(new_tet, (self.tet_x, self.tet_y)):
-                self.curr_tet = new_tet
+            kick_tests_1 = [(0, 0), (-1, 0), (-1, 1), (0, -2, (-1, -2))]
+            kick_tests_2 = {
+                    0: [(0, 0), (-2, 0), (1, 0), (-2, -1), (1, 2)],
+                    1: [(0, 0), (-1, 0), (2, 0), (-1, 2), (2, -1)],
+                    2: [(0, 0), (2, 0), (-1, 0), (2, 1), (-1, -2)],
+                    3: [(0, 0), (1, 0), (-2, 0), (1, -2), (-2, 1)]
+            }
+            if np.array_equal(self.reorient_tet(self.curr_tet), tetrominos[0]):
+                kick_tests = kick_tests_2[pos]
+            else:
+                kick_tests = kick_tests_1
+
+            for kick in kick_tests:
+                x_kick, y_kick = kick
+                if pos == 1 or pos == 2:
+                    x_kick = -x_kick
+                    y_kick = -y_kick
+                new_x = self.tet_x + x_kick
+                new_y = self.tet_y + y_kick
+                if not self.check_collision(new_tet, (new_x, new_y)):
+                    self.curr_tet = new_tet
+                    self.tet_x = new_x
+                    self.tet_y = new_y
+                    if self.lock_delay_timer is not None:
+                        self.lock_delay_timer = None
+                    return
 
     def quit(self):
         self.center_msg("Exiting...")
@@ -275,7 +312,7 @@ class Botris(object):
 			'ESCAPE':	self.quit,
 			'LEFT':		lambda:self.move(-1),
 			'RIGHT':	lambda:self.move(+1),
-			'DOWN':		self.drop,
+			'DOWN':		lambda:self.move(0,+1),
 			'UP':		self.rotate_tet,
 			'p':		self.toggle_pause,
 			'q':	    self.start_game,
@@ -293,15 +330,16 @@ class Botris(object):
             self.screen.fill((0, 0, 0))
             pygame.draw.line(self.screen, (255, 255, 255), (self.rlim + 1, 0), (self.rlim + 1, self.height - 1))
             self.display_msg("Next:", (self.rlim + cell_size, 2))
-            self.display_msg("Score: %d\n\nLevel: %d\nLines: %d" % (self.score, self.level, self.lines), (self.rlim + cell_size, cell_size * 5))
             self.display_msg("Hold:", (self.rlim + cell_size, cell_size * 10))
-            self.draw_matrix(self.background, (0, 0))
+            self.display_msg("Score: %d\nLines: %d" % (self.score, self.lines), (self.rlim + cell_size, cell_size * 5))
             self.draw_matrix(self.board, (0, 0))
+            ghost_tet = np.copy(self.curr_tet)
+            ghost_tet[self.curr_tet != 0] = 8
+            self.draw_matrix(ghost_tet, self.get_ghost_loc())
             self.draw_matrix(self.curr_tet, (self.tet_x, self.tet_y))
             self.draw_matrix(self.next_tet, (board_width + 1, 2))
             if self.hold_tet is not None:
                 self.draw_matrix(self.hold_tet, (board_width + 1, 11))
-            self.draw_matrix(self.curr_tet, self.get_ghost_loc())
             pygame.display.update()
 
             for event in pygame.event.get():
