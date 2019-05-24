@@ -94,7 +94,12 @@ class Botris(object):
         self.lock_delay_timer = None
         self.combo = 0
         self.hard_dropped = False
+        self.last_clear = ""
+        self.is_perfect_clear = False
+        self.is_mini = False
+        self.last_action = None
         pygame.time.set_timer(pygame.USEREVENT + 1, 1000)
+        pygame.time.set_timer(pygame.USEREVENT + 2, 50)
 
     def spawn_random_tet(self):
         if self.bag.size == 0:
@@ -139,29 +144,56 @@ class Botris(object):
 
     def get_score(self, lines_cleared):
         self.prev_tet = self.reorient_tet(self.prev_tet)
-        # mini t-spin, mini t-spin single, t-spin, t-spin single
-        # b2b t-spin mini, single, double triple, b2b tetris
         if lines_cleared == 1:
-            score = 100
+            if self.tspin_check(self.prev_tet, (self.prev_x, self.prev_y)):
+                if self.is_mini:
+                    score = 200
+                else:
+                    score = 800
+                clear_type = "tspin"
+            else:
+                score = 100
+                clear_type = "clear"
         elif lines_cleared == 2:
-            if np.array_equal(self.prev_tet, tetrominos[5]):
-                score = 1200
+            if self.tspin_check(self.prev_tet, (self.prev_x, self.prev_y)):
+                if self.is_mini:
+                    score = 400
+                else:
+                    score = 1200
+                clear_type = "tspin"
             else:
                 score = 300
+                clear_type = "clear"
         elif lines_cleared == 3:
-            if np.array_equal(self.prev_tet, tetrominos[5]):
+            if self.tspin_check(self.prev_tet, (self.prev_x, self.prev_y)):
                 score = 1600
+                clear_type = "tspin"
             else:
                 score = 500
+                clear_type = "clear"
         elif lines_cleared == 4:
             score = 800
+            clear_type = "tetris"
         else:
             if self.hard_dropped:
                 score = min(2 * self.prev_y, 40)
+            elif self.tspin_check(self.prev_tet, (self.prev_x, self.prev_y)):
+                if self.is_mini:
+                    score = 100
+                else:
+                    score = 400
+                if self.last_clear == "tspin":
+                    score *= 3/2
             else:
                 score = min(self.prev_y, 20)
-        score += self.combo * 50
 
+        score += self.combo * 50
+        if lines_cleared > 0:
+            if clear_type == self.last_clear:
+                score *= 3/2
+            self.last_clear = clear_type
+        if self.is_perfect_clear:
+            score *= 10
         return score
 
     def display_msg(self, msg, topleft):
@@ -198,6 +230,7 @@ class Botris(object):
             if self.lock_delay_timer is not None:
                 if (prev_x != self.tet_x or prev_y != self.tet_y):
                     self.lock_delay_timer = None
+                    self.last_action = "move"
                 elif pygame.time.get_ticks() - self.lock_delay_timer >= 300:
                     self.drop()
 
@@ -211,9 +244,11 @@ class Botris(object):
                 elif pygame.time.get_ticks() - self.lock_delay_timer >= 300:
                     self.board = join_matrices(self.board, self.curr_tet, (self.tet_x, self.tet_y))
                     self.prev_tet = self.curr_tet
-                    self.prev_y = self.tet_y
+                    self.prev_x = self.tet_x
+                    self.prev_y = self.tet_y - 1
                     self.spawn_random_tet()
                     lines_deleted = 0
+                    self.cache_board = self.board.copy()
                     while True:
                         for i, row in enumerate(self.board):
                             if 0 not in row:
@@ -223,16 +258,24 @@ class Botris(object):
                         else:
                             break
                     if lines_deleted:
-                        self.combo += 1
                         self.lines += lines_deleted
                         add_empty_row(self.board, lines_deleted)
+                    if np.count_nonzero(self.board) == 0:
+                        self.is_perfect_clear = True
+                    self.score += self.get_score(lines_deleted)
+                    if lines_deleted:
+                        self.combo += 1
                     elif self.combo > 0:
                         self.combo = 0
-                    self.score += self.get_score(lines_deleted)
                     self.lines += lines_deleted
                     self.hold_used = False
                     self.lock_delay_timer = None
                     self.hard_dropped = False
+                    self.is_perfect_clear = False
+
+    def lock_check(self):
+        if self.lock_delay_timer is not None and pygame.time.get_ticks() - self.lock_delay_timer >= 300:
+            self.drop()
 
     def hard_drop(self):
         if not self.gameover and not self.paused:
@@ -242,6 +285,7 @@ class Botris(object):
             self.lock_delay_timer = 300
             self.hard_dropped = True
             self.drop()
+            self.last_action = "drop"
 
     def reorient_tet(self, tet):
         for t in tetrominos:
@@ -262,6 +306,22 @@ class Botris(object):
             self.tet_x = int(board_width / 2 - len(self.curr_tet[0]) / 2)
             self.tet_y = 0
             self.hold_used = True
+
+    def tspin_check(self, tet, pos):
+        if not np.array_equal(self.prev_tet, tetrominos[5]):
+            return False
+        center_x, center_y = pos[0] + 1, pos[1] + 1
+        num_occupied = 0
+        corners = [-1, 1]
+        for i in corners:
+            for j in corners:
+                x = center_x + i
+                y = center_y + j
+                if y >= board_height or x < 0 or x >= board_width:
+                    num_occupied += 1
+                elif self.cache_board[y][x] != 0:
+                    num_occupied += 1
+        return self.last_action == "rotate" and num_occupied == 3
 
     def rotate_tet(self):
         if not self.gameover and not self.paused:
@@ -287,11 +347,16 @@ class Botris(object):
                 new_x = self.tet_x + x_kick
                 new_y = self.tet_y + y_kick
                 if not self.check_collision(new_tet, (new_x, new_y)):
+                    if x_kick != 0 and y_kick != 0:
+                        self.is_mini = True
+                    else:
+                        self.is_mini = False
                     self.curr_tet = new_tet
                     self.tet_x = new_x
                     self.tet_y = new_y
                     if self.lock_delay_timer is not None:
                         self.lock_delay_timer = None
+                    self.last_action = "rotate"
                     return
 
     def quit(self):
@@ -345,6 +410,8 @@ class Botris(object):
             for event in pygame.event.get():
                 if event.type == pygame.USEREVENT + 1:
                     self.drop()
+                elif event.type == pygame.USEREVENT + 2:
+                    self.lock_check()
                 elif event.type == pygame.QUIT:
                     self.quit()
                 elif event.type == pygame.KEYDOWN:
